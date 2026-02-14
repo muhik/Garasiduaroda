@@ -7,6 +7,7 @@ import { getCategories } from '../actions/categories';
 import { getSettings } from '../actions/settings';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
 
 export default async function AdminPage() {
     const isAuthenticated = await checkAuth();
