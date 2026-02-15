@@ -43,9 +43,15 @@ export const MotorCard: React.FC<MotorCardProps> = ({ motor, whatsappNumber, onZ
 
     const trackWhatsAppClick = () => {
         // @ts-ignore
-        if (window.fbq) {
+        if (typeof window !== 'undefined' && window.fbq) {
             // @ts-ignore
-            window.fbq('track', 'Lead', { content_name: 'WhatsApp Contact', value: motor.price, currency: 'IDR' });
+            window.fbq('track', 'Contact', {
+                content_name: 'WhatsApp Motor Inquiry',
+                content_ids: [motor.id],
+                content_type: 'product',
+                value: motor.price,
+                currency: 'IDR'
+            });
         }
     };
 
