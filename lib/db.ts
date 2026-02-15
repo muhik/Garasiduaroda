@@ -6,53 +6,60 @@ export const db = drizzle(async (sql, params, method) => {
     const url = (process.env.TURSO_DATABASE_URL || '').replace('libsql://', 'https://');
     const authToken = process.env.TURSO_AUTH_TOKEN || '';
 
-    // Construct statements for Turso HTTP API v2 pipeline
-    const pipelineReq = {
-        requests: [
+    // Use standard Turso HTTP API (v1) which is simpler and accepts raw values
+    // Endpoint: POST /
+    // Body: { "statements": [ { "q": "sql", "params": [...] } ] }
+
+    const requestBody = {
+        statements: [
             {
-                type: "execute",
-                stmt: {
-                    sql: sql,
-                    args: params
-                }
-            },
-            { type: "close" }
+                q: sql,
+                params: params
+            }
         ]
     };
 
-    const response = await fetch(`${url}/v2/pipeline`, {
+    const response = await fetch(url, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${authToken}`,
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(pipelineReq)
+        body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
         const text = await response.text();
-        throw new Error(`Turso HTTP Error ${response.status}: ${text}`);
+        throw new Error(`Turso HTTP V1 Error ${response.status}: ${text}`);
     }
 
+    // V1 Response format: [{ "results": { "columns": [], "rows": [] } }]
+    // Or sometimes strict array of results.
     const data = await response.json();
-    const resultItem = data.results[0]; // First request result
 
-    if (resultItem.type === 'error') {
-        throw new Error(resultItem.error.message);
+    // Check for error in the first statement result
+    if (Array.isArray(data) && data[0]?.error) {
+        throw new Error(data[0].error.message);
     }
 
-    const rs = resultItem.response.result;
+    // Success response handling
+    // Standard response: [ { results: { columns, rows } } ]
+    const resultItem = Array.isArray(data) ? data[0] : data;
 
-    // Convert Turso v2 response to what sqlite-proxy expects (array of arrays for rows)
-    // Turso returns: { cols: [{name}, ...], rows: [[{type, value}, ...], ...] }
-    // sqlite-proxy needs simple values in rows
-    const rows = rs.rows.map((r: any) => r.map((c: any) => c.value));
+    // Handle case where resultItem isn't what we expect (safety check)
+    if (!resultItem || !resultItem.results) {
+        // Should not happen for successful query, but handle just in case
+        return { rows: [] };
+    }
 
+    // Safely extract rows, defaulting to empty array if undefined (common in mutations)
+    const rows = resultItem.results.rows || [];
+
+    // sqlite-proxy expects simple array of arrays for rows, which V1 provides!
     return { rows: rows };
 });
 
-// Export a dummy client object to satisfy any lingering imports, 
-// but warn that it's not a real LibSQL client
+// Export a dummy client object to satisfy any lingering imports
 export const client = {
     execute: () => { throw new Error("Do not use 'client' directly. Use 'db' instead."); }
 } as any;
